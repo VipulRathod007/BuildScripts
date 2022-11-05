@@ -45,6 +45,13 @@ def writeTableConfigurations(inMDEF: MDEF, inOutputDir: str):
         writer.write('\t\tSaaSTablePKeyColumn tablePKey;\n')
         writer.write(f'\t\ttablePKey.SetPKeyName("pk_{table.Name}");\n')
         for pKey in table.PrimaryKeys:
+            # Finds Primary Key Column Index
+            for idx, col in enumerate(table.Columns):
+                if pKey.Name == col.Name:
+                    pKey.Index = idx
+                    break
+            if pKey.Index == -1:
+                raise Exception(f'Error: {pKey.Name} not found in columns of {table.FullName}')
             writer.write('\t\t{\n')
             writer.write(f'\t\t\tSaaSPK pKey{table.Name};\n'
                          f'\t\t\tpKey{table.Name}.SetPkColumn({pKey.Index});\n')
@@ -94,6 +101,7 @@ def writeTableConfigurations(inMDEF: MDEF, inOutputDir: str):
             writer.write('\t\t}\n')
         writer.write('\t}\n')
 
+        # Prepares Pagination
         if table.Pageable:
             currType = inMDEF.PaginationType.Type if inMDEF.PaginationType is not None else None
             currType = table.PaginationType.Type if table.PaginationType is not None else currType
@@ -102,6 +110,46 @@ def writeTableConfigurations(inMDEF: MDEF, inOutputDir: str):
                 writer.write('\tSaaSPagination::IPaginationHandler* paginationHandler =\n')
                 writer.write('\tSaaSPagination::SaaSPaginationFactory::CreatePaginationHandler('
                              f'SaaSPagination::{currType});\n\n')
+
+        # Prepares APIAccess
+        writer.write('\t// APIAccess\n')
+        writer.write('\t{\n')
+        writer.write('\t\tSaaSTableApiAccess table_apiAccess;\n')
+        # Prepares Read API
+        writer.write('\t\t// ReadAPI\n')
+        writer.write('\t\t{\n')
+        readAPI = table.ReadAPI
+        writer.write('\t\t\tSaaSReadApi table_readApi;\n')
+        if table.Pageable:
+            writer.write('\t\t\ttable_readApi.SetPaginationHandler(paginationHandler);\n')
+        writer.write('\t\t\t// ReadAPI Endpoints\n')
+        writer.write('\t\t\t{\n')
+        endpoint = readAPI.Endpoint
+        writer.write('\t\t\t\tSaaSReadApiEndpoint table_readApiEndpoint;\n')
+        writer.write(f'\t\t\t\ttable_readApiEndpoint.SetListEndPoint("{endpoint.ListEndpoint}");\n')
+        writer.write(f'\t\t\t\ttable_readApiEndpoint.SetItemEndPoint("{endpoint.ItemEndpoint}");\n')
+        writer.write(f'\t\t\t\ttable_readApiEndpoint.SetType("{endpoint.Type}");\n')
+        # TODO: Fix me
+        writer.write(f'\t\t\t\ttable_readApiEndpoint.SetPaginationData(GetPaginationDataDetails());\n')
+        if endpoint.PreReqCall is not None:
+            writer.writePreReqCalls(endpoint.PreReqCall, 4)
+        writer.write('\t\t\t\ttable_readApi.SetEndPoint(table_readApiEndpoint);\n')
+        writer.write('\t\t\t}\n')
+        writer.write(f'\t\t\ttable_readApi.SetMethod("{readAPI.Method}");\n')
+        if readAPI.Accept is not None and len(readAPI.Accept) > 0:
+            writer.write(f'\t\t\ttable_readApi.SetAccept("{readAPI.Accept}");\n')
+        if readAPI.ContentType is not None and len(readAPI.ContentType) > 0:
+            writer.write(f'\t\t\ttable_readApi.SetContentType("{readAPI.ContentType}");\n')
+        if readAPI.ParameterFormat is not None and len(readAPI.ParameterFormat) > 0:
+            writer.write(f'\t\t\ttable_readApi.SetParameterFormat({readAPI.ParameterFormat});\n')
+        if readAPI.ListRoot is not None and len(readAPI.ListRoot) > 0:
+            writer.write(f'\t\t\ttable_readApi.SetListRoot("{readAPI.ListRoot}");\n')
+        if readAPI.ItemRoot is not None and len(readAPI.ItemRoot) > 0:
+            writer.write(f'\t\t\ttable_readApi.SetItemRoot("{readAPI.ItemRoot}");\n')
+        writer.write(f'\t\t\ttable_apiAccess.SetReadApi(table_readApi);\n')
+        writer.write('\t\t}\n')
+        writer.write('\t\ttable.SetAPIAccess(table_apiAccess);\n')
+        writer.write('\t}\n')
         writer.write('\tio_configs.AddTable(table);\n')
         writer.write('}')
         writer.save()
@@ -127,121 +175,3 @@ if __name__ == '__main__':
     #     sys.exit(1)
     # main(sys.argv[1], sys.argv[2])
     main(r'C:\Users\vrathod\Perforce\VR_WPT\Drivers\Memphis\DataSources\Eloqua\Common\Maintenance\1.6\MDEF\driver-d.mdef', '.')
-
-
-#     final_script+='\t // Access API\n'
-#     final_script+='\t{\n'
-#     final_script+='\t\tSaaSTableApiAccess table_apiAccess;\n'
-#
-#     read_api_script='\t\t// ReadAPI\n'
-#     read_api_script+='\t\t{\n'
-#     read_api_script+='\t\t\tSaaSReadApi table_readApi;\n'
-#     read_api_script+='\t\t\t//table_readApi.SetPaginationHandler(paginationHandler);\n\n'
-#     read_api_script+='\t\t\t// Read API endpoints\n'
-#     read_api_script+='\t\t\t{\n'
-#     read_api_script+='\t\t\t\tSaaSReadApiEndpoint table_readApiEndpoint;\n'
-#
-#     api_access=table_data['APIAccess']
-#     read_api=api_access['ReadAPI']
-#     endpoint = read_api['Endpoint']
-#     if 'ItemEndpoint' in endpoint:
-#         item_end_point=endpoint['ItemEndpoint']
-#         read_api_script+='\t\t\t\ttable_readApiEndpoint.SetItemEndPoint(\n\t\t\t\t"'+item_end_point+'");\n'
-#     list_end_point=endpoint['ListEndpoint']
-#     read_api_script+='\t\t\t\ttable_readApiEndpoint.SetListEndPoint(\n\t\t\t\t"'+list_end_point+'");\n'
-#     if 'Type' in endpoint:
-#         end_point_type=endpoint['Type']
-#         read_api_script+='\t\t\t\ttable_readApiEndpoint.SetType("'+end_point_type+'");\n'
-#         if 'PREREQ_CALLS'==end_point_type:
-#             pre_req_call=endpoint['PreReqCall']
-#             read_api_script+='\t\t\t\t// Read API pre-reqcall\n'
-#             read_api_script+='\t\t\t\t{\n'
-#             read_api_script+='\t\t\t\t\tSaaSPreReqCall table_preReqCall;\n'
-#             if 'Endpoint' in pre_req_call:
-#                 endpoint=pre_req_call['Endpoint']
-#                 read_api_script+='\t\t\t\t\ttable_preReqCall.SetEndPoint("'+endpoint+'");\n'
-#             read_api_script+='\t\t\t\t\ttable_preReqCall.IsPageable();\n'
-#             read_api_script+='\t\t\t\t\t// Setting pagination handler marks that pagination is supported for the pre-reqcall\n'
-#             read_api_script+='\t\t\t\t\ttable_preReqCall.SetPaginationHandler(paginationHandler);\n'
-#             read_api_script+='\t\t\t\t\t// ServiceReq param key read details\n'
-#             for req_param in pre_req_call['SvcReqParam_Keys']:
-#                 read_api_script+='\t\t\t\t\t{\n'
-#                 read_api_script+='\t\t\t\t\t\tSaaSSvcReqParamKey table_svcReqParamKey;\n'
-#                 key_name=req_param['keyName']
-#                 read_api_script+='\t\t\t\t\t\ttable_svcReqParamKey.SetKeyName("'+key_name+'");\n'
-#                 resp_attr_field=req_param['SvcRespAttr_Field']
-#                 read_api_script+='\t\t\t\t\t\ttable_svcReqParamKey.SetSvcRespAttrField("'+resp_attr_field+'");\n'
-#                 if 'MaxValuesPerCall' in req_param:
-#                     max_val_per_call=str(req_param['MaxValuesPerCall'])
-#                     read_api_script+='\t\t\t\t\t\ttable_svcReqParamKey.SetMaxValuesPerCall('+max_val_per_call+');\n'
-#                 if '"IsParameter": true' in req_param:
-#                     read_api_script+='\t\t\t\t\t\ttable_svcReqParamKey.SetParameterType();\n'
-#                 if '"IsReferenced" : true' in req_param:
-#                     read_api_script+='\t\t\t\t\t\ttable_svcReqParamKey.IsReferencedType();\n'
-#                 read_api_script+='\t\t\t\t\t\ttable_preReqCall.AddSvcReqParamKey(table_svcReqParamKey);\n'
-#                 read_api_script+='\t\t\t\t\t}\n'
-#             if 'Root' in pre_req_call:
-#                 root=pre_req_call['Root']
-#                 read_api_script+='\t\t\t\t\ttable_preReqCall.SetListRoot("'+root+'");\n'
-#             read_api_script+='\t\t\t\t\ttable_preReqCall.SetPaginationData(GetPaginationDataDetails_ROWCOUNT());\n'
-#             read_api_script+='\t\t\t\t\ttable_readApiEndpoint.SetPreReqCall(table_preReqCall);\n'
-#             read_api_script+='\t\t\t\t}\n'
-#         else:
-#             if 'ListRoot' in read_api:
-#                 list_root=read_api['ListRoot']
-#                 read_api_script+='\t\t\t\ttable_readApi.SetListRoot("'+list_root+'");\n'
-#             if 'ItemRoot' in read_api:
-#                 item_root=read_api['ItemRoot']
-#                 read_api_script+='\t\t\t\ttable_readApi.SetItemRoot("'+item_root+'");\n'
-#
-#     read_api_script+='\t\t\t\ttable_readApi.SetEndPoint(table_readApiEndpoint);\n'
-#     read_api_script+='\t\t\t}\n'
-#     if 'Method' in read_api:
-#         method=read_api['Method']
-#         read_api_script+='\t\t\ttable_readApi.SetMethod("'+method+'");\n'
-#     if 'Accept' in read_api:
-#         accept=read_api['Accept']
-#         read_api_script+='\t\t\ttable_readApi.SetAccept("'+accept+'");\n'
-#     if 'ContentType' in read_api:
-#         content_type=read_api['ContentType']
-#         read_api_script+='\t\t\ttable_readApi.SetContentType("'+content_type+'");\n'
-#     if 'ParameterFormat' in read_api:
-#         param_format=read_api['ParameterFormat']
-#         if param_format=='Url':
-#             read_api_script+='\t\t\ttable_readApi.SetParameterFormat(PARAM_FORMAT_URL);\n'
-#         if param_format=='Body':
-#             read_api_script+='\t\t\ttable_readApi.SetParameterFormat(PARAM_FORMAT_BODY);\n'
-#         if param_format=='Query':
-#             read_api_script+='\t\t\ttable_readApi.SetParameterFormat(PARAM_FORMAT_QUERY);\n'
-#
-#     read_api_script+='\t\t\ttable_apiAccess.SetReadApi(table_readApi);\n'
-#     read_api_script+='\t\t}\n'
-#     read_api_script+='\t\ttable.SetAPIAccess(table_apiAccess);\n'
-#     read_api_script+='\t}\n'
-#     final_script+=read_api_script
-#     final_script+='}\n'
-#     file_name=table_schema_name+table_name
-#     final_script=final_script.replace('True','true')
-#     final_script=final_script.replace('False','false')
-#
-#     final_script=final_script.replace('Template',data_source_name)
-#     final_script=final_script.replace('FUNCTION_NAME',file_name)
-#     final_script=final_script.replace('FILENAME',file_name+'.cpp')
-#
-#     table_name=table_name.replace("{","")
-#     table_name=table_name.replace("}","")
-#     table_schema_name=table_schema_name.replace("{","")
-#     table_schema_name=table_schema_name.replace("}","")
-#
-#     file_path=sys.argv[2]+file_name+'.cpp'
-#     f_final = open(file_path,'w')
-#     f_final.write(final_script)
-#
-#     # Closing file
-#     f_final.close()
-# f_input.close()
-#
-#
-#
-#
-#

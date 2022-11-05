@@ -34,6 +34,10 @@ class Constants(Enum):
     FKEYCOLUMN = 'FKeyColumn'
     COLUMNS = 'Columns'
     APIACCESS = 'APIAccess'
+    READAPI = 'ReadAPI'
+    CREATEAPI = 'CreateAPI'
+    UPDATEAPI = 'UpdateAPI'
+    DELETEAPI = 'DeleteAPI'
     TABLESCHEMANAME = 'TableSchemaName'
     SUPPORT = 'Support'
     SVCREQPARAMKEY = 'SvcReqParam_Key'
@@ -67,6 +71,7 @@ class Constants(Enum):
     ROOT = 'Root'
     SVCREQPARAMKEYS = 'SvcReqParam_Keys'
     ITEMENDPOINT = 'ItemEndpoint'
+    ITEMENDPOINTHASARRAYRESPONSE = 'ItemEndpointHasArrayResponse'
     LISTENDPOINT = 'ListEndpoint'
     PREREQCALL = 'PreReqCall'
     TYPE = 'Type'
@@ -78,6 +83,7 @@ class Constants(Enum):
     ITEMROOT = 'ItemRoot'
     LISTROOT = 'ListRoot'
     METHOD = 'Method'
+    COLUMNREQUIREMENTS = 'ColumnRequirements'
     PARAMETERFORMAT = 'ParameterFormat'
     ENCBROWSECONNECTKEY = 'EncBrowseConnectKey'
     ISSENSITIVEKEY = 'IsSensitiveKey'
@@ -446,13 +452,33 @@ class Column(Parsable):
         self.__mReturnIdPath = inReturnIdPath
 
 
-class ReqParamKey:
+class ReqParamKey(Parsable):
     def __init__(self):
         self.__mRespAttrField = None
         self.__mKeyName = None
-        self.__mMaxValuesPerCall = None
-        self.__mIsReferenced = None
-        self.__mIsParameter = None
+        self.__mMaxValuesPerCall = 0
+        self.__mIsReferenced = False
+        self.__mIsParameter = False
+
+    def parse(self, inData):
+        """Parses SvcReqParamKeys MDEF Content"""
+        assert isinstance(inData, dict)
+        for key, val in inData.items():
+            if Constants.KEYNAME.value == key:
+                self.__mKeyName = val
+            elif Constants.SVCRESPATTRFIELD.value == key:
+                self.__mRespAttrField = val
+            elif Constants.ISREFERENCED.value == key:
+                self.__mIsReferenced = val
+            elif Constants.ISPARAMETER.value == key:
+                self.__mIsParameter = val
+            elif Constants.MAXVALUESPERCALL.value == key:
+                self.__mMaxValuesPerCall = val
+            else:
+                # TODO: Remove pass once all the keys are handled
+                pass
+                # raise Exception(f'Unhandled key encountered: {key}')
+        return self
 
     @property
     def IsParameter(self) -> bool:
@@ -495,14 +521,40 @@ class ReqParamKey:
         self.__mRespAttrField = inRespAttrField
 
 
-class PreReqCall:
+class PreReqCall(Parsable):
     def __init__(self):
-        self.__mPageable = None
-        self.__mReqParamKeys = None
-        self.__mChildPreReqCall = PreReqCall()
+        self.__mPageable = False
+        self.__mPagination = None
+        self.__mReqParamKeys = list()
+        self.__mChildPreReqCall = None
         self.__mListRoot = None
         self.__mParameterFormat = None
         self.__mEndpoint = None
+
+    def parse(self, inData):
+        """Parses PreReqCall MDEF Content"""
+        assert isinstance(inData, dict)
+        for key, val in inData.items():
+            if Constants.ENDPOINT.value == key:
+                self.__mEndpoint = val
+            elif Constants.ROOT.value == key:
+                self.__mListRoot = val
+            elif Constants.PAGEABLE.value == key:
+                self.__mPageable = val
+            elif Constants.PARAMETERFORMAT.value == key:
+                self.__mParameterFormat = val
+            elif Constants.PREREQCALL.value == key:
+                self.__mChildPreReqCall = PreReqCall().parse(val)
+            elif Constants.SVCREQPARAMKEYS.value == key:
+                for item in val:
+                    self.__mReqParamKeys.append(ReqParamKey().parse(item))
+            elif Constants.PAGINATION.value == key:
+                self.__mPagination = Pagination(val[Constants.PAGINATIONTYPE.value])
+            else:
+                # TODO: Remove pass once all the keys are handled
+                pass
+                # raise Exception(f'Unhandled key encountered: {key}')
+        return self
 
     @property
     def Endpoint(self):
@@ -552,16 +604,41 @@ class PreReqCall:
     def Pageable(self, isPageable: bool):
         self.__mPageable = isPageable
 
+    @property
+    def Pagination(self) -> Pagination:
+        return self.__mPagination
 
-class Endpoint:
+
+class Endpoint(Parsable):
     def __init__(self):
+        self.__mItemEndpointArrayResponse = False
         self.__mPreReqCall = None
         self.__mType = None
         self.__mItemEndpoint = None
         self.__mListEndpoint = None
 
+    def parse(self, inData):
+        """Parses Endpoint MDEF Content"""
+        assert isinstance(inData, dict)
+        for key, val in inData.items():
+            if Constants.LISTENDPOINT.value == key:
+                self.__mListEndpoint = val
+            elif Constants.ITEMENDPOINT.value == key:
+                self.__mItemEndpoint = val
+            elif Constants.ITEMENDPOINTHASARRAYRESPONSE.value == key:
+                self.__mItemEndpointArrayResponse = val
+            elif Constants.TYPE.value == key:
+                self.__mType = val
+            elif Constants.PREREQCALL.value == key:
+                self.__mPreReqCall = PreReqCall().parse(val)
+            else:
+                # TODO: Remove pass once all the keys are handled
+                pass
+                # raise Exception(f'Unhandled key encountered: {key}')
+        return self
+
     @property
-    def ListEndpoint(self):
+    def ListEndpoint(self) -> str:
         return self.__mListEndpoint
 
     @ListEndpoint.setter
@@ -575,6 +652,14 @@ class Endpoint:
     @ItemEndpoint.setter
     def ItemEndpoint(self, inItemEndpoint: str):
         self.__mItemEndpoint = inItemEndpoint
+
+    @property
+    def ItemEndpointHasArrayResponse(self) -> bool:
+        return self.__mItemEndpointArrayResponse
+
+    @ItemEndpointHasArrayResponse.setter
+    def ItemEndpointHasArrayResponse(self, inItemEndpointHasArrayResponse: bool):
+        self.__mItemEndpointArrayResponse = inItemEndpointHasArrayResponse
 
     @property
     def Type(self):
@@ -593,7 +678,15 @@ class Endpoint:
         self.__mPreReqCall = inPreReqCall
 
 
-class AbstractAPI:
+class ReadAPI(Parsable):
+    # TODO: Add HttpModifiers support
+
+    __paramformat__ = {
+        'BODY': 'PARAM_FORMAT_BODY',
+        'URL': 'PARAM_FORMAT_URL',
+        'QUERY': 'PARAM_FORMAT_QUERY'
+    }
+
     def __init__(self):
         self.__mItemRoot = None
         self.__mListRoot = None
@@ -603,6 +696,38 @@ class AbstractAPI:
         self.__mDataPath = None
         self.__mBodySkeleton = None
         self.__mMethod = None
+        self.__mColumnReq = list()
+        self.__mEndpoint = None
+
+    def parse(self, inData):
+        """Parses ReadAPI MDEF Content"""
+        assert isinstance(inData, dict)
+        for key, val in inData.items():
+            if Constants.METHOD.value == key:
+                self.__mMethod = val
+            elif Constants.COLUMNREQUIREMENTS.value == key:
+                self.__mColumnReq = val
+            elif Constants.BODYSKELETON.value == key:
+                self.__mBodySkeleton = val
+            elif Constants.DATAPATH.value == key:
+                self.__mDataPath = val
+            elif Constants.ENDPOINT.value == key:
+                self.__mEndpoint = Endpoint().parse(val)
+            elif Constants.ACCEPT.value == key:
+                self.__mAccept = val
+            elif Constants.CONTENTTYPE.value == key:
+                self.__mContentType = val
+            elif Constants.PARAMETERFORMAT.value == key:
+                self.__mParameterFormat = ReadAPI.__paramformat__[val.upper()]
+            elif Constants.LISTROOT.value == key:
+                self.__mListRoot = val
+            elif Constants.ITEMROOT.value == key:
+                self.__mItemRoot = val
+            else:
+                # TODO: Remove pass once all keys handled
+                pass
+                # raise Exception(f'Unhandled key encountered: {key}')
+        return self
 
     @property
     def Method(self):
@@ -611,6 +736,22 @@ class AbstractAPI:
     @Method.setter
     def Method(self, inMethod: str):
         self.__mMethod = inMethod
+
+    @property
+    def ColumnRequirements(self):
+        return self.__mColumnReq
+
+    @ColumnRequirements.setter
+    def ColumnRequirements(self, inColumnRequirements: list[str]):
+        self.__mColumnReq = inColumnRequirements
+
+    @property
+    def Endpoint(self):
+        return self.__mEndpoint
+
+    @Endpoint.setter
+    def Endpoint(self, inEndpoint: Endpoint):
+        self.__mEndpoint = inEndpoint
 
     @property
     def BodySkeleton(self):
@@ -650,7 +791,7 @@ class AbstractAPI:
 
     @ParameterFormat.setter
     def ParameterFormat(self, inParameterFormat: str):
-        self.__mParameterFormat = inParameterFormat
+        self.__mParameterFormat = ReadAPI.__paramformat__[inParameterFormat.upper()]
 
     @property
     def ListRoot(self):
@@ -671,6 +812,7 @@ class AbstractAPI:
 
 class Table(Parsable):
     def __init__(self):
+        self.__mReadAPI = None
         self.__mColumns = list()
         self.__mForeignKeys = list()
         self.__mPrimaryKeys = list()
@@ -712,7 +854,10 @@ class Table(Parsable):
                 for colData in val:
                     self.__mColumns.append(Column().parse(colData))
             elif Constants.APIACCESS.value == key:
-                # TODO: Fix me
+                # TODO: Support DML operations
+                for apiName, apiData in val.items():
+                    if Constants.READAPI.value == apiName:
+                        self.__mReadAPI = ReadAPI().parse(apiData)
                 pass
             else:
                 # TODO: Remove pass once VTables implemented
@@ -799,6 +944,10 @@ class Table(Parsable):
     @Columns.setter
     def Columns(self, inColumns: list[Column]):
         self.__mColumns = inColumns
+
+    @property
+    def ReadAPI(self) -> ReadAPI:
+        return self.__mReadAPI
 
     @property
     def FullName(self):

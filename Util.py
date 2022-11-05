@@ -4,8 +4,10 @@ Contains Utility functions
 import re
 import os
 import errno
-from datetime import date
 from enum import Enum
+from datetime import date
+
+from MDEF import PreReqCall
 
 
 class Constants(Enum):
@@ -39,6 +41,10 @@ class File:
         self.write(f'// {"=" * Constants.LINELENGTH.value}\n\n')
 
     def write(self, inContent: str):
+        """
+        Write content to file buffer
+        TODO: Implement CPP code formatting
+        """
         self.__content += inContent
         # braceIdx = dict()
         # lastIdx = -1
@@ -60,6 +66,79 @@ class File:
         #         self.__content += f'\n{self.__spaces * " "}{brace}'
         #     lastIdx = idx
         # self.__content += inContent[lastIdx + 1:].replace('\n', f'\n{self.__spaces * " "}')
+
+    def writePreReqCalls(self, inPreReqCall: PreReqCall, indentLevel: int):
+        """Generates Pre-req calls contents"""
+        tab = '\t'
+        self.write(f'{tab * indentLevel}{"{"}\n')
+        self.write(f'{tab * indentLevel}{"{"}\n')
+        self.write(f'{tab * (indentLevel + 1)}// ReadAPI Prereqcall\n')
+        self.write(f'{tab * (indentLevel + 1)}SaaSPreReqCall table_preReqCall1;\n')
+        self.write(f'{tab * (indentLevel + 1)}table_preReqCall1.SetEndPoint("{inPreReqCall.Endpoint}");\n')
+        if inPreReqCall.Pageable:
+            # TODO: Implement PreReqCall specific pagination config
+            self.write(f'{tab * (indentLevel + 1)}table_preReqCall1.SetPaginationHandler(paginationHandler);\n')
+        self.write(f'{tab * (indentLevel + 1)}// ServiceReq param key read details\n')
+        for item in inPreReqCall.ReqParamKeys:
+            self.write(f'{tab * (indentLevel + 1)}{"{"}\n')
+            self.write(f'{tab * (indentLevel + 2)}SaaSSvcReqParamKey table_svcReqParamKey;\n')
+            self.write(f'{tab * (indentLevel + 2)}table_svcReqParamKey.SetKeyName("{item.KeyName}");\n')
+            if item.RespAttrField is not None and len(item.RespAttrField) > 0:
+                self.write(f'{tab * (indentLevel + 2)}'
+                           f'table_svcReqParamKey.SetSvcRespAttrField("{item.RespAttrField}");\n')
+            if item.IsParameter:
+                self.write(f'{tab * (indentLevel + 2)}table_preReqCall1.SetParameterType();\n')
+            if item.IsReferenced:
+                self.write(f'{tab * (indentLevel + 2)}table_preReqCall1.SetReferencedType();\n')
+            if item.MaxValuesPerCall > 0:
+                self.write(f'{tab * (indentLevel + 2)}table_preReqCall1.SetMaxValuesPerCall({item.MaxValuesPerCall});\n')
+            self.write(f'{tab * (indentLevel + 2)}table_preReqCall1.AddSvcReqParamKey(table_svcReqParamKey);\n')
+            self.write(f'{tab * (indentLevel + 1)}{"}"}\n')
+        if inPreReqCall.ListRoot is not None and len(inPreReqCall.ListRoot) > 0:
+            self.write(f'{tab * (indentLevel + 1)}table_preReqCall1.SetListRoot("{inPreReqCall.ListRoot}");\n')
+        if inPreReqCall.Pageable and inPreReqCall.Pagination is not None:
+            # TODO: Prepare Pagination data
+            self.write(f'{tab * (indentLevel + 1)}table_preReqCall1.SetPaginationData(GetPaginationDataDetails_ROWCOUNT());\n')
+        if inPreReqCall.ChildPreReqCall is not None:
+            self.writeChildPreReqCalls(inPreReqCall.ChildPreReqCall, indentLevel + 1, 2)
+        self.write(f'{tab * (indentLevel + 1)}table_readApiEndpoint.SetPreReqCall(table_preReqCall1);\n')
+        self.write(f'{tab * indentLevel}{"}"}\n')
+
+    def writeChildPreReqCalls(self, inPreReqCall: PreReqCall, indentLevel: int, inIdent: int = 1):
+        """Generates Pre-req calls contents"""
+        tab = '\t'
+        self.write(f'{tab * indentLevel}{"{"}\n')
+        self.write(f'{tab * (indentLevel + 1)}// ReadAPI Nested Prereqcall\n')
+        self.write(f'{tab * (indentLevel + 1)}SaaSPreReqCall table_preReqCall{inIdent};\n')
+        self.write(f'{tab * (indentLevel + 1)}table_preReqCall{inIdent}.SetEndPoint("{inPreReqCall.Endpoint}");\n')
+        if inPreReqCall.Pageable:
+            # TODO: Implement PreReqCall specific pagination config
+            self.write(f'{tab * (indentLevel + 1)}table_preReqCall{inIdent}.SetPaginationHandler(paginationHandler);\n')
+        self.write(f'{tab * (indentLevel + 1)}// ServiceReq param key read details\n')
+        for item in inPreReqCall.ReqParamKeys:
+            self.write(f'{tab * (indentLevel + 1)}{"{"}\n')
+            self.write(f'{tab * (indentLevel + 2)}SaaSSvcReqParamKey table_svcReqParamKey;\n')
+            self.write(f'{tab * (indentLevel + 2)}table_svcReqParamKey.SetKeyName("{item.KeyName}");\n')
+            if item.RespAttrField is not None and len(item.RespAttrField) > 0:
+                self.write(f'{tab * (indentLevel + 2)}'
+                           f'table_svcReqParamKey.SetSvcRespAttrField("{item.RespAttrField}");\n')
+            if item.IsParameter:
+                self.write(f'{tab * (indentLevel + 2)}table_preReqCall{inIdent}.SetParameterType();\n')
+            if item.IsReferenced:
+                self.write(f'{tab * (indentLevel + 2)}table_preReqCall{inIdent}.SetReferencedType();\n')
+            if item.MaxValuesPerCall > 0:
+                self.write(f'{tab * (indentLevel + 2)}table_preReqCall{inIdent}.SetMaxValuesPerCall({item.MaxValuesPerCall});\n')
+            self.write(f'{tab * (indentLevel + 2)}table_preReqCall{inIdent}.AddSvcReqParamKey(table_svcReqParamKey);\n')
+            self.write(f'{tab * (indentLevel + 1)}{"}"}\n')
+        if inPreReqCall.ListRoot is not None and len(inPreReqCall.ListRoot) > 0:
+            self.write(f'{tab * (indentLevel + 1)}table_preReqCall{inIdent}.SetListRoot("{inPreReqCall.ListRoot}");\n')
+        if inPreReqCall.Pageable and inPreReqCall.Pagination is not None:
+            # TODO: Prepare Pagination data
+            self.write(f'{tab * (indentLevel + 1)}table_preReqCall{inIdent}.SetPaginationData(GetPaginationDataDetails_ROWCOUNT());\n')
+        if inPreReqCall.ChildPreReqCall is not None:
+            self.writeChildPreReqCalls(inPreReqCall.ChildPreReqCall, indentLevel + 1, inIdent + 1)
+        self.write(f'{tab * (indentLevel + 1)}table_preReqCall{inIdent - 1}.SetPreReqCall(table_preReqCall{inIdent});\n')
+        self.write(f'{tab * indentLevel}{"}"}\n')
 
     def save(self):
         with open(os.path.join(self.mPath, self.mName), 'w') as file:
