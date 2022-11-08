@@ -8,7 +8,6 @@ from Util import File
 
 def writeSkeletonTableConfigurations(inMDEF: MDEF, inOutputDir: str):
     """Prepares Skeleton Table Configurations"""
-    # TODO: Implement SkeletonColumns, ListVariables
     for table in inMDEF.SkeletonTables:
         writer = File(f'{table.FullName}.cpp', f'{inMDEF.DataSource} {table.FullName} configurations', inOutputDir)
         writer.write('#include "Authentication/SaaSAuthenticationFactory.h"\n')
@@ -19,7 +18,7 @@ def writeSkeletonTableConfigurations(inMDEF: MDEF, inOutputDir: str):
         writer.write(f'void {table.FullName}(SaaSConfiguration& io_configs)\n')
         writer.write('{\n')
         writer.write('\tSaaSTable table;\n')
-        writer.write(f'\ttable.SetTableCatalogName(L"{inMDEF.DataSource}")\n')
+        writer.write(f'\ttable.SetTableCatalogName(L"{inMDEF.DataSource}");\n')
         writer.write(f'\ttable.SetTableName(L"{table.Name}");\n')
         if table.TableSchemaName is not None and len(table.TableSchemaName) > 0:
             writer.write(f'\ttable.SetTableSchemaName(L"{table.TableSchemaName}");\n')
@@ -39,6 +38,9 @@ def writeSkeletonTableConfigurations(inMDEF: MDEF, inOutputDir: str):
         # Prepare Columns
         writer.writeColumns(table.Columns, 1)
 
+        # Prepare SkeletonTables
+        writer.writeSkeletonColumns(table.SkeletonColumns, 1)
+
         # Prepares Pagination
         if table.Pageable:
             currType = inMDEF.PaginationType.Type if inMDEF.PaginationType is not None else None
@@ -52,6 +54,7 @@ def writeSkeletonTableConfigurations(inMDEF: MDEF, inOutputDir: str):
         # Prepares APIAccess
         writer.write('\t// APIAccess\n')
         writer.write('\t{\n')
+        writer.write('\t\tSaaSTableApiAccess table_apiAccess;\n')
         # Prepares Read API
         writer.writeReadAPI(table.ReadAPI, table.PaginationType, 2)
         writer.write('\t\ttable.SetAPIAccess(table_apiAccess);\n')

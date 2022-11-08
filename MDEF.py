@@ -1,5 +1,6 @@
 """
 Contains definition of MDEF class
+TODO: FKey implementation left
 """
 import re
 import sys
@@ -26,7 +27,9 @@ class Constants(Enum):
     TABLENAME = 'TableName'
     TABLES = 'Tables'
     SKELETONTABLE = 'SkeletonTable'
+    SKELETONCOLUMN = 'SkeletonColumn'
     TABLEDEFINITION = 'TableDefinition'
+    COLUMNDEFINITION = 'ColumnDefinition'
     SORTABLE = 'Sortable'
     PAGEABLE = 'Pageable'
     COLUMNPUSHDOWN = 'ColumnPushdown'
@@ -103,6 +106,7 @@ class Constants(Enum):
     VERIFYHOST = 'VerifyHost'
     VERIFYPEER = 'VerifyPeer'
     LISTVARIABLESPRECALLS = 'ListVariablesPrecalls'
+    LISTVARIABLEACCESS = 'ListVariableAccess'
     SVCRESPATTR_DEFAULTVALUE = 'SvcRespAttr_DefaultValue'
     SVCRESPATTR_MAPPING = 'SvcRespAttr_Mapping'
     ACCEPTTYPE = 'AcceptType'
@@ -818,8 +822,129 @@ class ReadAPI(Parsable):
         self.__mItemRoot = inItemRoot
 
 
+class Variable:
+
+    def __init__(self, inName: str, inMappedName: str):
+        self.__mVariableName = inName
+        self.__mMappedName = inMappedName
+
+    @property
+    def Name(self):
+        return self.__mVariableName
+
+    @Name.setter
+    def Name(self, inName: str):
+        self.__mVariableName = inName
+
+    @property
+    def MappedName(self):
+        return self.__mMappedName
+
+    @MappedName.setter
+    def MappedName(self, inName: str):
+        self.__mMappedName = inName
+
+
+class ListVariable(Parsable):
+
+    def __init__(self):
+        self.__mVariableRoot = None
+        self.__mVariables = list()
+        self.__mAcceptType = None
+        self.__mDefaultValue = None
+        self.__mEndpoint = None
+
+    def parse(self, inData):
+        """Parses ListVariablesPrecalls MDEF Content"""
+        assert isinstance(inData, dict)
+        for key, val in inData.items():
+            if key == Constants.ENDPOINT.value:
+                self.__mEndpoint = val
+            elif key == Constants.SVCRESPATTR_DEFAULTVALUE.value:
+                self.__mDefaultValue = val
+            elif key == Constants.ACCEPTTYPE.value:
+                self.__mAcceptType = val
+            elif key == Constants.VARIABLES.value:
+                for item in val:
+                    self.__mVariables.append(
+                        Variable(item[Constants.VARIABLENAME.value],
+                                 item[Constants.SVCRESPATTR_MAPPING.value])
+                    )
+            elif key == Constants.VARIABLEROOT.value:
+                self.__mVariableRoot = val
+            else:
+                # TODO: Remove pass once VTables implemented
+                pass
+                # raise Exception(f'Unhandled Key encountered: {key}')
+        return self
+
+    @property
+    def Endpoint(self):
+        return self.__mEndpoint
+
+    @Endpoint.setter
+    def Endpoint(self, inEndpoint: str):
+        self.__mEndpoint = inEndpoint
+
+    @property
+    def AcceptType(self):
+        return self.__mAcceptType
+
+    @AcceptType.setter
+    def AcceptType(self, inAcceptType: str):
+        self.__mAcceptType = inAcceptType
+
+    @property
+    def DefaultValue(self):
+        return self.__mDefaultValue
+
+    @DefaultValue.setter
+    def DefaultValue(self, inValue: str):
+        self.__mDefaultValue = inValue
+
+    @property
+    def Root(self):
+        return self.__mVariableRoot
+
+    @Root.setter
+    def Root(self, inRoot: str):
+        self.__mVariableRoot = inRoot
+
+    @property
+    def Variables(self) -> list[Variable]:
+        return self.__mVariables
+
+    @Variables.setter
+    def Variables(self, inVariables: list[Variable]):
+        self.__mVariables = inVariables
+
+
+class SkeletonColumn:
+
+    def __init__(self, inColumnDef: Column, inListVariable: ListVariable):
+        self.__mColDef = inColumnDef
+        self.__mListVar = inListVariable
+
+    @property
+    def ColumnDefinition(self) -> Column:
+        return self.__mColDef
+
+    @ColumnDefinition.setter
+    def ColumnDefinition(self, inColDef: Column):
+        self.__mColDef = inColDef
+
+    @property
+    def ListVariableAccess(self) -> ListVariable:
+        return self.__mListVar
+
+    @ListVariableAccess.setter
+    def ListVariableAccess(self, inListVariableAccess: ListVariable):
+        self.__mListVar = inListVariableAccess
+
+
 class Table(Parsable):
     def __init__(self):
+        self.__mSkeletonColumns = list()
         self.__mReadAPI = None
         self.__mColumns = list()
         self.__mForeignKeys = list()
@@ -859,6 +984,12 @@ class Table(Parsable):
                     if Constants.READAPI.value == apiName:
                         self.__mReadAPI = ReadAPI().parse(apiData)
                 pass
+            elif Constants.SKELETONCOLUMN.value == key:
+                for skeletonCol in val:
+                    self.__mSkeletonColumns.append(SkeletonColumn(
+                        Column().parse(skeletonCol[Constants.COLUMNDEFINITION.value]),
+                        ListVariable().parse(skeletonCol[Constants.LISTVARIABLEACCESS.value])
+                    ))
             else:
                 # TODO: Remove pass once VTables implemented
                 pass
@@ -965,109 +1096,20 @@ class Table(Parsable):
         self.__mColumns = inColumns
 
     @property
+    def SkeletonColumns(self) -> list[SkeletonColumn]:
+        return self.__mSkeletonColumns
+
+    @SkeletonColumns.setter
+    def SkeletonColumns(self, inColumns: list[SkeletonColumn]):
+        self.__mSkeletonColumns = inColumns
+
+    @property
     def ReadAPI(self) -> ReadAPI:
         return self.__mReadAPI
 
     @property
     def FullName(self):
         return f'{self.__mTableSchemaName}{MDEF.cleanName(self.__mName)}'
-
-
-class Variable:
-
-    def __init__(self, inName: str, inMappedName: str):
-        self.__mVariableName = inName
-        self.__mMappedName = inMappedName
-
-    @property
-    def Name(self):
-        return self.__mVariableName
-
-    @Name.setter
-    def Name(self, inName: str):
-        self.__mVariableName = inName
-
-    @property
-    def MappedName(self):
-        return self.__mMappedName
-
-    @MappedName.setter
-    def MappedName(self, inName: str):
-        self.__mMappedName = inName
-
-
-class ListVariablesPreCall(Parsable):
-
-    def __init__(self):
-        self.__mVariableRoot = None
-        self.__mVariables = list()
-        self.__mAcceptType = None
-        self.__mDefaultValue = None
-        self.__mEndpoint = None
-
-    def parse(self, inData):
-        """Parses ListVariablesPrecalls MDEF Content"""
-        assert isinstance(inData, dict)
-        for key, val in inData.items():
-            if key == Constants.ENDPOINT.value:
-                self.__mEndpoint = val
-            elif key == Constants.SVCRESPATTR_DEFAULTVALUE.value:
-                self.__mDefaultValue = val
-            elif key == Constants.ACCEPTTYPE.value:
-                self.__mAcceptType = val
-            elif key == Constants.VARIABLES.value:
-                for item in val:
-                    self.__mVariables.append(
-                        Variable(item[Constants.VARIABLENAME.value],
-                                 item[Constants.SVCRESPATTR_MAPPING.value])
-                    )
-            elif key == Constants.VARIABLEROOT.value:
-                self.__mVariableRoot = val
-            else:
-                # TODO: Remove pass once VTables implemented
-                pass
-                # raise Exception(f'Unhandled Key encountered: {key}')
-        return self
-
-    @property
-    def Endpoint(self):
-        return self.__mEndpoint
-
-    @Endpoint.setter
-    def Endpoint(self, inEndpoint: str):
-        self.__mEndpoint = inEndpoint
-
-    @property
-    def AcceptType(self):
-        return self.__mAcceptType
-
-    @AcceptType.setter
-    def AcceptType(self, inAcceptType: str):
-        self.__mAcceptType = inAcceptType
-
-    @property
-    def DefaultValue(self):
-        return self.__mDefaultValue
-
-    @DefaultValue.setter
-    def DefaultValue(self, inValue: str):
-        self.__mDefaultValue = inValue
-
-    @property
-    def Root(self):
-        return self.__mVariableRoot
-
-    @Root.setter
-    def Root(self, inRoot: str):
-        self.__mVariableRoot = inRoot
-
-    @property
-    def Variables(self) -> list[Variable]:
-        return self.__mVariables
-
-    @Variables.setter
-    def Variables(self, inVariables: list[Variable]):
-        self.__mVariables = inVariables
 
 
 class SkeletonTable(Table):
@@ -1082,7 +1124,7 @@ class SkeletonTable(Table):
         assert isinstance(inData, dict)
         Table.parse(self, inData[Constants.TABLEDEFINITION.value])
         for item in inData[Constants.LISTVARIABLESPRECALLS.value]:
-            self.__mListVariablePreCalls.append(ListVariablesPreCall().parse(item))
+            self.__mListVariablePreCalls.append(ListVariable().parse(item))
         return self
 
     @property
@@ -1098,11 +1140,11 @@ class SkeletonTable(Table):
         self.__mItemEndpointColumnName = inName
 
     @property
-    def ListVariables(self) -> list[ListVariablesPreCall]:
+    def ListVariables(self) -> list[ListVariable]:
         return self.__mListVariablePreCalls
 
     @ListVariables.setter
-    def ListVariables(self, inListVariables: list[ListVariablesPreCall]):
+    def ListVariables(self, inListVariables: list[ListVariables]):
         self.__mListVariablePreCalls = inListVariables
 
 

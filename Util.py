@@ -7,7 +7,7 @@ import errno
 from enum import Enum
 from datetime import date
 
-from MDEF import ColumnPushdown, Column, ListVariablesPreCall, Pagination, PrimaryKey, PreReqCall, ReadAPI
+from MDEF import ColumnPushdown, Column, ListVariable, Pagination, PrimaryKey, PreReqCall, ReadAPI, SkeletonColumn
 
 
 class Constants(Enum):
@@ -98,9 +98,6 @@ class File:
         self.write(f'{tab * (indentLevel + 1)}// ReadAPI Prereqcall\n')
         self.write(f'{tab * (indentLevel + 1)}SaaSPreReqCall table_preReqCall1;\n')
         self.write(f'{tab * (indentLevel + 1)}table_preReqCall1.SetEndPoint("{inPreReqCall.Endpoint}");\n')
-        if inPreReqCall.Pageable:
-            # TODO: Implement PreReqCall specific pagination config
-            self.write(f'{tab * (indentLevel + 1)}table_preReqCall1.SetPaginationHandler(paginationHandler);\n')
         self.write(f'{tab * (indentLevel + 1)}// ServiceReq param key read details\n')
         for item in inPreReqCall.ReqParamKeys:
             self.write(f'{tab * (indentLevel + 1)}{"{"}\n')
@@ -121,6 +118,8 @@ class File:
             self.write(f'{tab * (indentLevel + 1)}table_preReqCall1.SetListRoot("{inPreReqCall.ListRoot}");\n')
         if inPreReqCall.Pageable and inPreReqCall.Pagination is not None:
             # TODO: Prepare Pagination data
+            self.write(f'{tab * (indentLevel + 1)}table_preReqCall1.IsPageable();\n')
+            self.write(f'{tab * (indentLevel + 1)}table_preReqCall.SetPaginationHandler(paginationHandler);\n')
             self.write(f'{tab * (indentLevel + 1)}table_preReqCall1.SetPaginationData(GetPaginationDataDetails_ROWCOUNT());\n')
         if inPreReqCall.ChildPreReqCall is not None:
             self.writeChildPreReqCalls(inPreReqCall.ChildPreReqCall, indentLevel + 1, 2)
@@ -157,15 +156,20 @@ class File:
             self.write(f'{tab * (indentLevel + 1)}table_preReqCall{inIdent}.SetListRoot("{inPreReqCall.ListRoot}");\n')
         if inPreReqCall.Pageable and inPreReqCall.Pagination is not None:
             # TODO: Prepare Pagination data
+            self.write(f'{tab * (indentLevel + 1)}table_preReqCall1.IsPageable();\n')
+            self.write(f'{tab * (indentLevel + 1)}table_preReqCall.SetPaginationHandler(paginationHandler);\n')
             self.write(f'{tab * (indentLevel + 1)}table_preReqCall{inIdent}.SetPaginationData(GetPaginationDataDetails_ROWCOUNT());\n')
         if inPreReqCall.ChildPreReqCall is not None:
             self.writeChildPreReqCalls(inPreReqCall.ChildPreReqCall, indentLevel + 1, inIdent + 1)
         self.write(f'{tab * (indentLevel + 1)}table_preReqCall{inIdent - 1}.SetPreReqCall(table_preReqCall{inIdent});\n')
         self.write(f'{tab * indentLevel}{"}"}\n')
 
-    def writeColumns(self, inColumns: list[Column], indent: int = 1):
+    def writeColumns(self, inColumns: list[Column], indent: int = 1, isSkeletonColumn: bool = False):
         tab = '\t'
-        self.write(f'{tab * indent}// Static Columns\n')
+        if isSkeletonColumn:
+            self.write(f'{tab * indent}// Skeleton Column Definition\n')
+        else:
+            self.write(f'{tab * indent}// Static Columns\n')
         self.write(f'{tab * indent}{"{"}\n')
         for column in inColumns:
             self.write(f'{tab * (indent + 1)}{"{"}\n')
@@ -203,9 +207,23 @@ class File:
             if column.SyntheticIndexColumn:
                 # Do nothing. Virtual tables not implemented
                 pass
-            self.write(f'{tab * (indent + 2)}table.AddColumn(column_table);\n')
+            if isSkeletonColumn:
+                self.write(f'{tab * (indent + 2)}skeleton_columns.SetSkeletonColumnDefinition(column_table);\n')
+            else:
+                self.write(f'{tab * (indent + 2)}table.AddColumn(column_table);\n')
             self.write(f'{tab * (indent + 1)}{"}"}\n')
+        self.write(f'{tab * indent}{"}"}\n')
+
+    def writeSkeletonColumns(self, inColumns: list[SkeletonColumn], indent: int = 1):
+        tab = '\t'
+        self.write(f'{tab * indent}// Skeleton Columns\n')
         self.write(f'{tab * indent}{"{"}\n')
+        for skeletonCol in inColumns:
+            self.write(f'{tab * (indent + 1)}SaaSSkeletonColumn skeleton_columns;\n')
+            self.writeColumns([skeletonCol.ColumnDefinition], indent + 1, True)
+            self.writeListVariables([skeletonCol.ListVariableAccess], indent + 1, True)
+            self.write(f'{tab * (indent + 1)}table.AddSkeletonColumn(skeleton_columns);\n')
+        self.write(f'{tab * indent}{"}"}\n')
 
     def writeReadAPI(self, inReadAPI: ReadAPI, inPagination: Pagination, indent: int = 1):
         tab = '\t'
@@ -215,6 +233,7 @@ class File:
         if inPagination is not None:
             self.write(f'{tab * (indent + 1)}table_readApi.SetPaginationHandler(paginationHandler);\n')
         self.write(f'{tab * (indent + 1)}// ReadAPI Endpoints\n')
+
         self.write(f'{tab * (indent + 1)}{"{"}\n')
         endpoint = inReadAPI.Endpoint
         self.write(f'{tab * (indent + 2)}SaaSReadApiEndpoint table_readApiEndpoint;\n')
@@ -228,25 +247,28 @@ class File:
             self.writePreReqCalls(endpoint.PreReqCall, indent + 2)
         self.write(f'{tab * (indent + 2)}table_readApi.SetEndPoint(table_readApiEndpoint);\n')
         self.write(f'{tab * (indent + 1)}{"}"}\n')
+
         self.write(f'{tab * (indent + 1)}table_readApi.SetMethod("{inReadAPI.Method}");\n')
         if inReadAPI.Accept is not None and len(inReadAPI.Accept) > 0:
             self.write(f'{tab * (indent + 1)}table_readApi.SetAccept("{inReadAPI.Accept}");\n')
         if inReadAPI.ContentType is not None and len(inReadAPI.ContentType) > 0:
             self.write(f'{tab * (indent + 1)}table_readApi.SetContentType("{inReadAPI.ContentType}");\n')
         if inReadAPI.ParameterFormat is not None and len(inReadAPI.ParameterFormat) > 0:
-            self.write(f'{tab * (indent + 1)}table_readApi.SetParameterFormat("{inReadAPI.ParameterFormat}");\n')
+            self.write(f'{tab * (indent + 1)}table_readApi.SetParameterFormat({inReadAPI.ParameterFormat});\n')
         if inReadAPI.ListRoot is not None and len(inReadAPI.ListRoot) > 0:
             self.write(f'{tab * (indent + 1)}table_readApi.SetListRoot("{inReadAPI.ListRoot}");\n')
         if inReadAPI.ItemRoot is not None and len(inReadAPI.ItemRoot) > 0:
             self.write(f'{tab * (indent + 1)}table_readApi.SetItemRoot("{inReadAPI.ItemRoot}");\n')
         self.write(f'{tab * (indent + 1)}table_apiAccess.SetReadApi(table_readApi);\n')
-        self.write(f'{tab * (indent + 1)}{"}"}\n')
-        self.write(f'{tab * (indent + 1)}table.SetAPIAccess(table_apiAccess);\n')
+        # self.write(f'{tab * (indent + 1)}{"}"}\n')
         self.write(f'{tab * indent}{"}"}\n')
 
-    def writeListVariables(self, inListVariables: list[ListVariablesPreCall], indent: int = 1):
+    def writeListVariables(self, inListVariables: list[ListVariable], indent: int = 1, isListVariableAccess: bool = False):
         tab = '\t'
-        self.write(f'{tab * indent}// List Variable PreCalls\n')
+        if isListVariableAccess:
+            self.write(f'{tab * indent}// List Variable Access\n')
+        else:
+            self.write(f'{tab * indent}// List Variable PreCalls\n')
         for listVar in inListVariables:
             self.write(f'{tab * indent}{"{"}\n')
             self.write(f'{tab * (indent + 1)}SaaSListVariable table_listvariable;\n')
@@ -264,7 +286,10 @@ class File:
                 self.write(f'{tab * (indent + 1)}table_listvariable.SetVariableRoot("{listVar.Root}");\n')
             if listVar.DefaultValue is not None and len(listVar.DefaultValue) > 0:
                 self.write(f'{tab * (indent + 1)}table_listvariable.SetSvcRespAttrDefaultValue("{listVar.DefaultValue}");\n')
-            self.write(f'{tab * (indent + 1)}skeleton_table.AddListVariablesPrecalls(table_listvariable);\n')
+            if isListVariableAccess:
+                self.write(f'{tab * (indent + 1)}skeleton_columns.SetListVariableAccess(table_listvariable);\n')
+            else:
+                self.write(f'{tab * (indent + 1)}skeleton_table.AddListVariablesPrecalls(table_listvariable);\n')
             self.write(f'{tab * indent}{"}"}\n')
         self.write('\n')
 
