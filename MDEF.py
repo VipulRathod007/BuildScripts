@@ -26,6 +26,7 @@ class Constants(Enum):
     TABLENAME = 'TableName'
     TABLES = 'Tables'
     SKELETONTABLE = 'SkeletonTable'
+    TABLEDEFINITION = 'TableDefinition'
     SORTABLE = 'Sortable'
     PAGEABLE = 'Pageable'
     COLUMNPUSHDOWN = 'ColumnPushdown'
@@ -101,6 +102,13 @@ class Constants(Enum):
     AUTH_WINDOWWIDTH = 'Auth_WindowWidth'
     VERIFYHOST = 'VerifyHost'
     VERIFYPEER = 'VerifyPeer'
+    LISTVARIABLESPRECALLS = 'ListVariablesPrecalls'
+    SVCRESPATTR_DEFAULTVALUE = 'SvcRespAttr_DefaultValue'
+    SVCRESPATTR_MAPPING = 'SvcRespAttr_Mapping'
+    ACCEPTTYPE = 'AcceptType'
+    VARIABLES = 'Variables'
+    VARIABLEROOT = 'VariableRoot'
+    VARIABLENAME = 'VariableName'
 
 
 class Parsable:
@@ -187,10 +195,10 @@ class ColumnPushdown(Parsable):
 
 
 class PrimaryKey:
-    def __init__(self, inName: str, inFKCols: list[str]):
+    def __init__(self, inName: str, inFKCols: list[str], inIdx: int):
         self.__mRelatedFKColumns = inFKCols
         self.__mName = inName
-        self.__mIndex = -1
+        self.__mIndex = inIdx
 
     @property
     def Name(self):
@@ -829,17 +837,9 @@ class Table(Parsable):
         assert isinstance(inData, dict)
         for key, val in inData.items():
             if Constants.TABLENAME.value == key:
-                self.__mName = MDEF.cleanName(val)
+                self.__mName = val
             elif Constants.TABLESCHEMANAME.value == key:
                 self.__mTableSchemaName = val
-            elif Constants.PKEYCOLUMN.value == key:
-                for pKeyDataOut in val.values():
-                    for pKeyData in pKeyDataOut:
-                        self.__mPrimaryKeys.append(PrimaryKey(
-                            pKeyData[Constants.PKCOLUMNNAME.value],
-                            pKeyData[Constants.RELATEDFKCOLUMNS.value]
-                            if Constants.RELATEDFKCOLUMNS.value in pKeyData else None)
-                        )
             elif Constants.ITEMENDPOINTCOLUMNNAMES.value == key:
                 self.__mItemEndpointColumnNames = val
             elif Constants.SORTABLE.value == key:
@@ -863,6 +863,25 @@ class Table(Parsable):
                 # TODO: Remove pass once VTables implemented
                 pass
                 # raise Exception(f'Unhandled Key encountered: {key}')
+        if Constants.PKEYCOLUMN.value in inData:
+            for pKeyDataOut in inData[Constants.PKEYCOLUMN.value].values():
+                for pKeyData in pKeyDataOut:
+                    pKey = pKeyData[Constants.PKCOLUMNNAME.value]
+                    colIdx = -1
+                    # To find out PrimaryKey column index
+                    for idx, col in enumerate(self.__mColumns):
+                        if col.Name == pKey:
+                            colIdx = idx
+                            break
+                    if colIdx == -1:
+                        # TODO: Column Index connot be found in SkeletonColumns.
+                        #       Remove pass once fixed
+                        # raise Exception(f'Error: {pKey} not found in columns of {self.Name} table')
+                        pass
+                    self.__mPrimaryKeys.append(PrimaryKey(
+                        pKey, pKeyData[Constants.RELATEDFKCOLUMNS.value]
+                        if Constants.RELATEDFKCOLUMNS.value in pKeyData else None, colIdx)
+                    )
         return self
 
     @property
@@ -951,11 +970,140 @@ class Table(Parsable):
 
     @property
     def FullName(self):
-        return f'{self.__mTableSchemaName}{self.__mName}'
+        return f'{self.__mTableSchemaName}{MDEF.cleanName(self.__mName)}'
+
+
+class Variable:
+
+    def __init__(self, inName: str, inMappedName: str):
+        self.__mVariableName = inName
+        self.__mMappedName = inMappedName
+
+    @property
+    def Name(self):
+        return self.__mVariableName
+
+    @Name.setter
+    def Name(self, inName: str):
+        self.__mVariableName = inName
+
+    @property
+    def MappedName(self):
+        return self.__mMappedName
+
+    @MappedName.setter
+    def MappedName(self, inName: str):
+        self.__mMappedName = inName
+
+
+class ListVariablesPreCall(Parsable):
+
+    def __init__(self):
+        self.__mVariableRoot = None
+        self.__mVariables = list()
+        self.__mAcceptType = None
+        self.__mDefaultValue = None
+        self.__mEndpoint = None
+
+    def parse(self, inData):
+        """Parses ListVariablesPrecalls MDEF Content"""
+        assert isinstance(inData, dict)
+        for key, val in inData.items():
+            if key == Constants.ENDPOINT.value:
+                self.__mEndpoint = val
+            elif key == Constants.SVCRESPATTR_DEFAULTVALUE.value:
+                self.__mDefaultValue = val
+            elif key == Constants.ACCEPTTYPE.value:
+                self.__mAcceptType = val
+            elif key == Constants.VARIABLES.value:
+                for item in val:
+                    self.__mVariables.append(
+                        Variable(item[Constants.VARIABLENAME.value],
+                                 item[Constants.SVCRESPATTR_MAPPING.value])
+                    )
+            elif key == Constants.VARIABLEROOT.value:
+                self.__mVariableRoot = val
+            else:
+                # TODO: Remove pass once VTables implemented
+                pass
+                # raise Exception(f'Unhandled Key encountered: {key}')
+        return self
+
+    @property
+    def Endpoint(self):
+        return self.__mEndpoint
+
+    @Endpoint.setter
+    def Endpoint(self, inEndpoint: str):
+        self.__mEndpoint = inEndpoint
+
+    @property
+    def AcceptType(self):
+        return self.__mAcceptType
+
+    @AcceptType.setter
+    def AcceptType(self, inAcceptType: str):
+        self.__mAcceptType = inAcceptType
+
+    @property
+    def DefaultValue(self):
+        return self.__mDefaultValue
+
+    @DefaultValue.setter
+    def DefaultValue(self, inValue: str):
+        self.__mDefaultValue = inValue
+
+    @property
+    def Root(self):
+        return self.__mVariableRoot
+
+    @Root.setter
+    def Root(self, inRoot: str):
+        self.__mVariableRoot = inRoot
+
+    @property
+    def Variables(self) -> list[Variable]:
+        return self.__mVariables
+
+    @Variables.setter
+    def Variables(self, inVariables: list[Variable]):
+        self.__mVariables = inVariables
 
 
 class SkeletonTable(Table):
-    pass
+
+    def __init__(self):
+        super().__init__()
+        self.__mListVariablePreCalls = list()
+        self.__mItemEndpointColumnName = None
+
+    def parse(self, inData):
+        """Parses Skeleton Tables MDEF Content"""
+        assert isinstance(inData, dict)
+        Table.parse(self, inData[Constants.TABLEDEFINITION.value])
+        for item in inData[Constants.LISTVARIABLESPRECALLS.value]:
+            self.__mListVariablePreCalls.append(ListVariablesPreCall().parse(item))
+        return self
+
+    @property
+    def FullName(self):
+        return f'SkeletonTable{super().FullName}'
+
+    @property
+    def ItemEndpointColumnName(self):
+        return self.__mItemEndpointColumnName
+
+    @ItemEndpointColumnName.setter
+    def ItemEndpointColumnName(self, inName: str):
+        self.__mItemEndpointColumnName = inName
+
+    @property
+    def ListVariables(self) -> list[ListVariablesPreCall]:
+        return self.__mListVariablePreCalls
+
+    @ListVariables.setter
+    def ListVariables(self, inListVariables: list[ListVariablesPreCall]):
+        self.__mListVariablePreCalls = inListVariables
 
 
 class Header:
@@ -1215,12 +1363,7 @@ class MDEF:
             self.__mSkeletonTables = list()
             if Constants.SKELETONTABLE.value in self.__mContent:
                 for tableData in self.__mContent[Constants.SKELETONTABLE.value]:
-                    skeletonTable = SkeletonTable()
-                    tableData = tableData['TableDefinition']
-                    skeletonTable.Name = MDEF.cleanName(tableData[Constants.TABLENAME.value])
-                    if Constants.TABLESCHEMANAME.value in tableData:
-                        skeletonTable.TableSchemaName = tableData[Constants.TABLESCHEMANAME.value]
-                    self.__mSkeletonTables.append(skeletonTable)
+                    self.__mSkeletonTables.append(SkeletonTable().parse(tableData))
         except KeyError as error:
             print(f'{error} key not found in MDEF')
             sys.exit(1)

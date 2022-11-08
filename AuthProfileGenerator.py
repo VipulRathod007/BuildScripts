@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import shutil
 from datetime import date
 from MDEF import MDEF
 from Util import File
@@ -300,16 +301,19 @@ def main(inMDEFPath: str, inOutputDir: str):
         inMDEFPath = os.path.abspath(inMDEFPath)
     else:
         print(f'Invalid MDEF path: {inMDEFPath}')
-    File.createDir(inOutputDir)
+    configDir = os.path.join(inOutputDir, 'Configs')
+    if os.path.exists(configDir):
+        shutil.rmtree(configDir)
+    File.createDir(configDir)
 
     with open(inMDEFPath, 'r') as file:
         mdefContent = json.load(file)
     mdef = MDEF(mdefContent)
 
-    writeConfiguration(mdef, inOutputDir)
-    writeConfigurationH(mdef, inOutputDir)
-    writeConfigurationHelpersH(mdef, inOutputDir)
-    writeDriverWideConfiguration(mdef, inOutputDir)
+    writeConfiguration(mdef, configDir)
+    writeConfigurationH(mdef, configDir)
+    writeConfigurationHelpersH(mdef, configDir)
+    writeDriverWideConfiguration(mdef, configDir)
 
 
 if __name__ == '__main__':
