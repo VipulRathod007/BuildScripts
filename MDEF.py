@@ -1,8 +1,6 @@
 """
 Contains definition of MDEF class
-TODO: FKey implementation left
 """
-import re
 import sys
 from enum import Enum
 from abc import abstractmethod
@@ -221,19 +219,57 @@ class PrimaryKey:
         return self.__mRelatedFKColumns
 
 
-class ForeignKey:
+class ForeignKeyColumn:
+
+    def __init__(self, inForeignKey: str, inPrimaryKey: str):
+        # Represents the column of the table as foreign key
+        self.__mForeignKey = inForeignKey
+        # Represents the column of the referenced table's primary key
+        self.__mPrimaryKey = inPrimaryKey
+
+    @property
+    def ForeignKey(self):
+        return self.__mForeignKey
+
+    @ForeignKey.setter
+    def ForeignKey(self, inForeignKey: str):
+        self.__mForeignKey = inForeignKey
+
+    @property
+    def PrimaryKey(self):
+        return self.__mPrimaryKey
+
+    @PrimaryKey.setter
+    def PrimaryKey(self, inPrimaryKey: str):
+        self.__mPrimaryKey = inPrimaryKey
+
+
+class ForeignKey(Parsable):
     def __init__(self):
         self.__mReferenceTableSchema = None
         self.__mReferenceTable = None
-        self.__mForeignKeyMap = None
+        self.__mForeignKeyColumns = list()
+
+    def parse(self, inData):
+        """Parses FKeyColumn MDEF Content"""
+        assert isinstance(inData, dict)
+        for key, val in inData.items():
+            if Constants.FOREIGNKEYCOLUMNS.value == key:
+                for fKey, pKey in val.items():
+                    self.__mForeignKeyColumns.append(ForeignKeyColumn(fKey, pKey))
+            elif Constants.REFERENCETABLE.value == key:
+                self.__mReferenceTable = val
+            elif Constants.REFERENCETABLESCHEMA.value == key:
+                self.__mReferenceTableSchema = val
+        return self
 
     @property
-    def ForeignKeyMap(self) -> dict:
-        return self.__mForeignKeyMap
+    def ForeignKeyColumns(self) -> list[ForeignKeyColumn]:
+        return self.__mForeignKeyColumns
 
-    @ForeignKeyMap.setter
-    def ForeignKeyMap(self, inForeignKeyMap: dict):
-        self.__mForeignKeyMap = inForeignKeyMap
+    @ForeignKeyColumns.setter
+    def ForeignKeyColumns(self, inForeignKeyColumns: list[ForeignKeyColumn]):
+        self.__mForeignKeyColumns = inForeignKeyColumns
 
     @property
     def ReferenceTable(self) -> str:
@@ -280,7 +316,6 @@ class ColumnMetadata(Parsable):
             else:
                 raise Exception(f'Unhandled key encountered: {key}')
         return self
-
 
     @property
     def IsUnsigned(self) -> bool:
@@ -990,6 +1025,9 @@ class Table(Parsable):
                         Column().parse(skeletonCol[Constants.COLUMNDEFINITION.value]),
                         ListVariable().parse(skeletonCol[Constants.LISTVARIABLEACCESS.value])
                     ))
+            elif Constants.FKEYCOLUMN.value == key:
+                for item in val:
+                    self.__mForeignKeys.append(ForeignKey().parse(item))
             else:
                 # TODO: Remove pass once VTables implemented
                 pass
@@ -1014,6 +1052,10 @@ class Table(Parsable):
                         if Constants.RELATEDFKCOLUMNS.value in pKeyData else None, colIdx)
                     )
         return self
+
+    @property
+    def IsSkeletonTable(self) -> bool:
+        return False
 
     @property
     def Name(self) -> str:
@@ -1126,6 +1168,10 @@ class SkeletonTable(Table):
         for item in inData[Constants.LISTVARIABLESPRECALLS.value]:
             self.__mListVariablePreCalls.append(ListVariable().parse(item))
         return self
+
+    @property
+    def IsSkeletonTable(self) -> bool:
+        return True
 
     @property
     def FullName(self):
@@ -1390,7 +1436,7 @@ class MDEF:
             # Parses Auth profiles
             self.__mAuthProfiles = AuthProfiles().parse(self.__mContent[Constants.AUTHPROFILES.value])
 
-            # Parses GLobal pagination
+            # Parses Global pagination
             if Constants.PAGINATION.value in self.__mContent:
                 self.__mGlobalPagination = Pagination(
                     self.__mContent[Constants.PAGINATION.value][Constants.PAGINATIONTYPE.value]
@@ -1399,13 +1445,19 @@ class MDEF:
             # Parse tables
             self.__mTables = list()
             for tableData in self.__mContent[Constants.TABLES.value]:
-                self.__mTables.append(Table().parse(tableData))
+                table = Table().parse(tableData)
+                if table.Pageable and table.PaginationType is None:
+                    table.PaginationType = self.__mGlobalPagination
+                self.__mTables.append(table)
 
             # Parse SkeletonTables
             self.__mSkeletonTables = list()
             if Constants.SKELETONTABLE.value in self.__mContent:
                 for tableData in self.__mContent[Constants.SKELETONTABLE.value]:
-                    self.__mSkeletonTables.append(SkeletonTable().parse(tableData))
+                    table = SkeletonTable().parse(tableData)
+                    if table.Pageable and table.PaginationType is None:
+                        table.PaginationType = self.__mGlobalPagination
+                    self.__mSkeletonTables.append(table)
         except KeyError as error:
             print(f'{error} key not found in MDEF')
             sys.exit(1)
@@ -1464,10 +1516,6 @@ class MDEF:
     @property
     def SkeletonTables(self):
         return self.__mSkeletonTables
-
-    def __check(self, inKey: str, inSource: dict):
-        """Checks if given key is present in Source"""
-        return inKey in inSource
 
     @staticmethod
     def cleanName(inName: str):
